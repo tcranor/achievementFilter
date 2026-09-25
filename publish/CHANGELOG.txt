@@ -1,0 +1,8 @@
+[b]1.0.0[/b]
+[list]
+[*]Initial release.
+[*]Hides achievement categories and subcategories with nothing matching the selected filter (All / Earned / Unearned), and brings them back when the filter changes.
+[*]Remembers your last filter between sessions, or always starts on the filter of your choice.
+[*]Optionally filters the summary page progress bars the same way.
+[*]Settings page (needs LibAddonMenu-2.0) and /acf chat commands.
+[/list]

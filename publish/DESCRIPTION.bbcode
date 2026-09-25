@@ -1,0 +1,35 @@
+[size=4][b]Achievement Category Filter[/b][/size]
+
+[b]Optional dependency:[/b] [url=https://www.esoui.com/downloads/info7-LibAddonMenu.html]LibAddonMenu-2.0[/url] for the settings page. Everything else works without it.
+
+The achievement journal's filter dropdown (All / Earned / Unearned) only filters the achievement list. The category tree on the left still shows every category, so you end up clicking through categories you've already finished.
+
+This addon hides every category and subcategory with nothing matching the filter. Choose [i]Unearned Achievements[/i] and only categories with something left to do remain. Choose [i]All Achievements[/i] and they all come back straight away.
+
+[size=3][b]Features[/b][/size]
+[list]
+[*]Hides empty categories and subcategories for the selected filter, and updates the tree as soon as you change it.
+[*]Keeps your current subcategory selected when you switch filters, as long as it's still shown.
+[*]Works with the achievement search box.
+[*]Remembers your last filter between sessions, or always starts on the filter you choose.
+[*]Optionally hides summary page progress bars for categories the filter hides, such as 100% complete categories when showing unearned achievements. Clicking a bar still opens its category.
+[/list]
+
+[size=3][b]Settings[/b][/size]
+Settings > Add-Ons > Achievement Category Filter:
+[list]
+[*][b]Filter on open[/b]: the filter the journal starts with after logging in. Default: Unearned.
+[*][b]Remember last filter[/b]: start on the filter you picked last instead. Default: on.
+[*][b]Filter summary page[/b]: filter the summary page progress bars too. Default: on.
+[/list]
+
+[size=3][b]Chat commands[/b][/size]
+[list]
+[*][b]/acf all[/b], [b]/acf earned[/b], [b]/acf unearned[/b]: change the filter
+[*][b]/acf settings[/b]: open the settings page
+[*][b]/acf debug[/b]: print troubleshooting details (include these in bug reports)
+[*][b]/acf[/b]: list the commands
+[/list]
+
+[size=3][b]Coming from Improved Achievement Categories?[/b][/size]
+This addon does the same job as [url=https://www.esoui.com/downloads/info2744-ImprovedAchievementCategories.html]Improved Achievement Categories[/url] by MrPikPik, and fixes categories not coming back when you switch to "All Achievements". Disable or uninstall that addon before using this one, as the two conflict. Thanks to MrPikPik for the original idea.
