@@ -2,7 +2,7 @@
 
 An Elder Scrolls Online addon that hides achievement categories with nothing matching the selected filter (All / Earned / Unearned), and brings them back when you change the filter.
 
-It replaces [Improved Achievement Categories](https://www.esoui.com/downloads/info3114-ImprovedAchievementCategories.html). That addon never unhides categories when you switch back to "All Achievements". It tries to hook `ACHIEVEMENTS:InitializeFilters`, but the game has already run that function by the time addons load, so the game's own filter callback stays in place, and that callback never rebuilds the category tree.
+It updates [Improved Achievement Categories](https://www.esoui.com/downloads/info3114-ImprovedAchievementCategories.html). That addon never unhides categories when you switch back to "All Achievements". It tries to hook `ACHIEVEMENTS:InitializeFilters`, but the game has already run that function by the time addons load, so the game's own filter callback stays in place, and that callback never rebuilds the category tree.
 
 ## Features
 
