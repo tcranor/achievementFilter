@@ -14,11 +14,3 @@ It replaces [Improved Achievement Categories](https://www.esoui.com/downloads/in
 ## Settings
 
 Settings > Add-Ons > Achievement Category Filter (needs [LibAddonMenu-2.0](https://www.esoui.com/downloads/info7-LibAddonMenu.html), optional): **Filter on open**, **Remember last filter**, and **Filter summary page**. Chat commands work without it: `/acf all|earned|unearned`, `/acf settings`.
-
-## Publishing to ESOUI
-
-`publish/` holds the ESOUI description (`DESCRIPTION.bbcode`) and changelog (`CHANGELOG.txt`). Run `publish\package.ps1` to build `publish\AchievementCategoryFilter-<version>.zip`, which contains only the addon folder. Bump `## Version` and `## AddOnVersion` in the manifest and `VERSION` in the Lua file together.
-
-## Install
-
-Copy the `AchievementCategoryFilter` folder into `Documents\Elder Scrolls Online\live\AddOns\`, then run `/reloadui`. Disable Improved Achievement Categories; running both makes their hooks conflict.
