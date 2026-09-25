@@ -1,0 +1,9 @@
+## Title: Achievement Category Filter
+## Description: Hides achievement categories with nothing matching the selected filter (All / Earned / Unearned), and brings them back when the filter changes.
+## Author: TheGodDrums
+## APIVersion: 101050 101051
+## AddOnVersion: 1
+## Version: 1.0.0
+## SavedVariables: AchievementCategoryFilter_SV
+
+AchievementCategoryFilter.lua
