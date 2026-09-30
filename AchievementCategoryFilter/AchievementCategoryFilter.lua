@@ -14,7 +14,7 @@ local FILTER_TYPES = { SI_ACHIEVEMENT_FILTER_SHOW_ALL, SI_ACHIEVEMENT_FILTER_SHO
 local FILTER_COMMANDS = { all = SI_ACHIEVEMENT_FILTER_SHOW_ALL, earned = SI_ACHIEVEMENT_FILTER_SHOW_EARNED, unearned = SI_ACHIEVEMENT_FILTER_SHOW_UNEARNED }
 
 local sv
-local isResettingFilters = false
+local suppressFilterSave = false -- true while the filter changes without the user picking it
 
 local function GetFilterType()
     return ACHIEVEMENTS.categoryFilter.filterType or SI_ACHIEVEMENT_FILTER_SHOW_ALL
@@ -66,15 +66,33 @@ local function CategoryHasVisibleAchievement(filterType, categoryIndex, consider
     return false
 end
 
--- Counters for /acf debug
-local stats = { builds = 0, filterChanges = 0, hiddenCategories = 0, hiddenSubcategories = 0 }
+-- Counters and a log of recent tree builds for /acf debug
+local stats = { builds = 0, filterChanges = 0 }
+local buildLog = {} -- newest last, at most MAX_BUILD_LOG entries
+local MAX_BUILD_LOG = 6
+local currentBuild
+local rebuildReason -- set while this addon triggers a rebuild
 
 -- Prehooks: returning true skips the original, so the node is never added to the tree.
 local function OnBuildCategories()
     stats.builds = stats.builds + 1
-    stats.lastBuildFilter = GetFilterType()
-    stats.hiddenCategories = 0
-    stats.hiddenSubcategories = 0
+    currentBuild =
+    {
+        number = stats.builds,
+        reason = rebuildReason or "game",
+        time = GetFrameTimeSeconds(),
+        filterType = GetFilterType(),
+        earnedPoints = GetEarnedAchievementPoints(),
+        checkedCategories = 0,
+        checkedSubcategories = 0,
+        hiddenCategories = 0,
+        hiddenSubcategories = 0,
+        subcategoryResults = {}, -- ["category/subcategory"] = hidden
+    }
+    table.insert(buildLog, currentBuild)
+    if #buildLog > MAX_BUILD_LOG then
+        table.remove(buildLog, 1)
+    end
 end
 
 local function OnAddTopLevelCategory(self, categoryIndex)
@@ -82,26 +100,38 @@ local function OnAddTopLevelCategory(self, categoryIndex)
     local filterType = GetFilterType()
     if filterType == SI_ACHIEVEMENT_FILTER_SHOW_ALL then return false end
     local hide = not CategoryHasVisibleAchievement(filterType, categoryIndex, true)
-    if hide then stats.hiddenCategories = stats.hiddenCategories + 1 end
+    if currentBuild then
+        currentBuild.checkedCategories = currentBuild.checkedCategories + 1
+        if hide then currentBuild.hiddenCategories = currentBuild.hiddenCategories + 1 end
+    end
     return hide
 end
 
 local function OnAddCategory(self, lookup, tree, nodeTemplate, parent, categoryIndex, name, hidesUnearned, normalIcon, pressedIcon, mouseoverIcon, isSummary, isFakedSubcategory)
-    if nodeTemplate ~= "ZO_TreeLabelSubCategory" or not parent then return false end
+    -- Subcategories are the nodes with a parent. Don't match on nodeTemplate: update 12.1.5
+    -- renamed it from ZO_TreeLabelSubCategory to ZO_Achievements_SubCategory.
+    if not parent then return false end
     local filterType = GetFilterType()
     if filterType == SI_ACHIEVEMENT_FILTER_SHOW_ALL then return false end
     local subcategoryIndex = not isFakedSubcategory and categoryIndex or nil
     local hide = not HasVisibleAchievement(filterType, parent.data.categoryIndex, subcategoryIndex, true)
-    if hide then stats.hiddenSubcategories = stats.hiddenSubcategories + 1 end
+    if currentBuild then
+        currentBuild.checkedSubcategories = currentBuild.checkedSubcategories + 1
+        if hide then currentBuild.hiddenSubcategories = currentBuild.hiddenSubcategories + 1 end
+        currentBuild.subcategoryResults[parent.data.categoryIndex .. "/" .. tostring(subcategoryIndex)] = hide
+    end
     return hide
 end
 
 -- Rebuild the category tree the same way the base game does after a search change,
 -- so the selected subcategory is reselected and its content refreshed if it still exists.
-local function RebuildCategories()
+local function RebuildCategories(reason)
+    if not ACHIEVEMENTS.initialized then return end -- the tree doesn't exist until the journal first opens
+    rebuildReason = reason
     ACHIEVEMENTS.forceUpdateContentOnCategoryReselect = true
     ACHIEVEMENTS:BuildCategories()
     ACHIEVEMENTS.forceUpdateContentOnCategoryReselect = false
+    rebuildReason = nil
 end
 
 -- The base game's filter callback sets the filter and calls RefreshVisibleCategoryFilter,
@@ -109,19 +139,45 @@ end
 -- rebuild the tree right after it.
 local function OnFilterChanged()
     stats.filterChanges = stats.filterChanges + 1
-    if not isResettingFilters then
+    if not suppressFilterSave then
         sv.filterType = GetFilterType()
     end
-    RebuildCategories()
+    RebuildCategories("filter changed")
 end
 
+-- Selects a filter in the journal's dropdown. The dropdown is only filled in when the
+-- journal first opens, so until then the filter is kept and applied at that point.
+local pendingFilter
 local function SelectFilter(filterType)
+    if not ACHIEVEMENTS.initialized then
+        pendingFilter = filterType
+        return
+    end
     local comboBox = ZO_ComboBox_ObjectFromContainer(ACHIEVEMENTS.categoryFilter)
     for index, entry in ipairs(comboBox:GetItems()) do
         if entry.filterType == filterType then
             comboBox:SelectItemByIndex(index)
             return
         end
+    end
+end
+
+local function GetStartFilter()
+    return sv.rememberLastFilter and sv.filterType or sv.filterOnOpen
+end
+
+-- Runs once the journal has set itself up on first open, which selects "All".
+local function OnJournalInitialized()
+    suppressFilterSave = false
+    if pendingFilter then
+        -- Picked with /acf before the journal was opened: that's the user's choice.
+        local filterType = pendingFilter
+        pendingFilter = nil
+        SelectFilter(filterType)
+    else
+        suppressFilterSave = true
+        SelectFilter(GetStartFilter())
+        suppressFilterSave = false
     end
 end
 
@@ -208,7 +264,9 @@ local function CreateSettingsPanel()
             getFunc = function() return sv.filterSummary end,
             setFunc = function(value)
                 sv.filterSummary = value
-                ACHIEVEMENTS:UpdateSummary()
+                if ACHIEVEMENTS.initialized then
+                    ACHIEVEMENTS:UpdateSummary()
+                end
             end,
         },
     })
@@ -223,15 +281,24 @@ local function FilterName(filterType)
 end
 
 local function PrintDebug()
-    Print(string.format("version %s, filter now: %s, tree last built with: %s",
-        VERSION, FilterName(GetFilterType()), FilterName(stats.lastBuildFilter)))
+    Print(string.format("version %s, filter now: %s, earned points now: %d, tree builds: %d, filter changes: %d",
+        VERSION, FilterName(GetFilterType()), GetEarnedAchievementPoints(), stats.builds, stats.filterChanges))
     Print(string.format("hooks: BuildCategories %s, AddCategory %s, RefreshVisibleCategoryFilter %s",
         tostring(rawget(ACHIEVEMENTS, "BuildCategories") ~= nil),
         tostring(rawget(ACHIEVEMENTS, "AddCategory") ~= nil),
         tostring(rawget(ACHIEVEMENTS, "RefreshVisibleCategoryFilter") ~= nil)))
-    Print(string.format("tree builds: %d, filter changes: %d, last build hid %d categories and %d subcategories",
-        stats.builds, stats.filterChanges, stats.hiddenCategories, stats.hiddenSubcategories))
 
+    local now = GetFrameTimeSeconds()
+    for _, build in ipairs(buildLog) do
+        Print(string.format("build #%d (%s, %ds ago): filter %s, earned points %d, checked %d categories/%d subcategories, hid %d/%d",
+            build.number, build.reason, zo_round(now - build.time), FilterName(build.filterType), build.earnedPoints,
+            build.checkedCategories, build.checkedSubcategories, build.hiddenCategories, build.hiddenSubcategories))
+    end
+
+    if not ACHIEVEMENTS.initialized then
+        Print("the achievements journal hasn't been opened yet this session")
+        return
+    end
     local data = ACHIEVEMENTS.categoryTree:GetSelectedData()
     if not data or data.summary then
         Print("selected: summary (select a subcategory for details)")
@@ -251,8 +318,11 @@ local function PrintDebug()
             passing = passing + 1
         end
     end
-    Print(string.format("selected: %s (category %d, subcategory %s): %d achievements, %d match the filter",
-        tostring(data.name), categoryIndex, tostring(subcategoryIndex), #ids, passing))
+    local lastBuild = buildLog[#buildLog]
+    local lastResult = lastBuild and lastBuild.subcategoryResults[categoryIndex .. "/" .. tostring(subcategoryIndex)]
+    local lastResultText = lastResult == nil and "not checked" or (lastResult and "hidden" or "shown")
+    Print(string.format("selected: %s (category %d, subcategory %s): %d achievements, %d match the filter; last build: %s",
+        tostring(data.name), categoryIndex, tostring(subcategoryIndex), #ids, passing, lastResultText))
 end
 
 local function HandleSlash(argument)
@@ -262,6 +332,13 @@ local function HandleSlash(argument)
         Print("Filter set to " .. GetString(FILTER_COMMANDS[command]) .. ".")
     elseif command == "debug" then
         PrintDebug()
+    elseif command == "rebuild" then
+        if ACHIEVEMENTS.initialized then
+            RebuildCategories("/acf rebuild")
+            Print("Category list rebuilt.")
+        else
+            Print("Open the achievements journal first.")
+        end
     elseif command == "settings" then
         if settingsPanel then
             LibAddonMenu2:OpenToPanel(settingsPanel)
@@ -273,6 +350,7 @@ local function HandleSlash(argument)
         Print("  /acf all | earned | unearned - change the achievement filter")
         Print("  /acf settings - open the settings page (needs LibAddonMenu-2.0)")
         Print("  /acf debug - print troubleshooting details")
+        Print("  /acf rebuild - rebuild the category list")
     end
 end
 
@@ -288,11 +366,22 @@ local function OnAddonLoaded(event, addonName)
     SecurePostHook(ACHIEVEMENTS, "RefreshVisibleCategoryFilter", OnFilterChanged)
     ACHIEVEMENTS.UpdateSummary = UpdateSummary
 
-    -- Clicking an achievement link resets the filter to "All"; don't remember that as the user's choice.
-    ZO_PreHook(ACHIEVEMENTS, "ResetFilters", function() isResettingFilters = true end)
-    SecurePostHook(ACHIEVEMENTS, "ResetFilters", function() isResettingFilters = false end)
+    -- Since update 12.1.5 the journal sets up its category tree and filter dropdown the
+    -- first time it opens (OnDeferredInitialize), selecting "All". Apply the start filter
+    -- after that, without saving the game's "All" as the user's choice.
+    if ACHIEVEMENTS.initialized then
+        OnJournalInitialized()
+    else
+        ZO_PreHook(ACHIEVEMENTS, "OnDeferredInitialize", function() suppressFilterSave = true end)
+        SecurePostHook(ACHIEVEMENTS, "OnDeferredInitialize", OnJournalInitialized)
+    end
 
-    SelectFilter(sv.rememberLastFilter and sv.filterType or sv.filterOnOpen)
+    -- Rebuild whenever the journal opens, so the tree matches progress made while it was closed.
+    SecurePostHook(ACHIEVEMENTS, "OnShowing", function() RebuildCategories("journal opened") end)
+
+    -- Clicking an achievement link resets the filter to "All"; don't remember that as the user's choice.
+    ZO_PreHook(ACHIEVEMENTS, "ResetFilters", function() suppressFilterSave = true end)
+    SecurePostHook(ACHIEVEMENTS, "ResetFilters", function() suppressFilterSave = false end)
 
     CreateSettingsPanel()
     SLASH_COMMANDS["/acf"] = HandleSlash
